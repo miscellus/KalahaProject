@@ -24,6 +24,16 @@ data Kalaha     = Kalaha PitCount StoneCount deriving (Show, Read, Eq)
 type KPos       = Int
 type KState     = [Int]
 type Player     = Bool
+
+(alice, bob) = (False, True)
+
+getPlayerOffset :: Kalaha -> Player -> Int
+getPlayerOffset (Kalaha pitCount _) player
+    | player == alice = 0
+    | otherwise = pitCount+1
+
+wrapIndex :: Kalaha -> Int -> Int
+wrapIndex (Kalaha pitCount _) index = index `mod` (2*pitCount + 2)
 \end{code}
 
 
@@ -32,34 +42,55 @@ The function `startStateImpl`
 
 \begin{code}
 startStateImpl :: Kalaha -> KState
-startStateImpl (Kalaha n m) = undefined
+startStateImpl (Kalaha pitCount stoneCount) = side ++ side
+    where side = (replicate pitCount stoneCount) ++ [0]
 \end{code}
 
+
+The function `dropThenTake`
+----
+
+
+\begin{code}
+dropThenTake :: Int -> Int -> [a] -> [a]
+dropThenTake n m xs = take n (drop m xs)
+\end{code}
 
 The function `movesImpl`
 ----
 
 \begin{code}
 movesImpl :: Kalaha -> Player -> KState -> [KPos]
-movesImpl g p s = undefined
+movesImpl game@(Kalaha pitCount _) player state =
+    [index | (index, value) <- indexedPits, value > 0]
+    where
+        indexedPits = dropThenTake playerOffset pitCount (zip [0..] state)
+        playerOffset = getPlayerOffset game player
 \end{code}
 
+The function `playerStoreValue`
+----
+
+\begin{code}
+playerStoreValue :: Kalaha -> KState -> Player -> Int
+playerStoreValue game@(Kalaha pitCount _) state player = state !! playerStoreIndex
+    where playerStoreIndex = (getPlayerOffset game player) + pitCount
+\end{code}
 
 The function `valueImpl`
 ----
 
-
 \begin{code}
 valueImpl :: Kalaha -> KState -> Double
-valueImpl g s = undefined
+valueImpl game state = fromIntegral ( (value bob) - (value alice) )
+    where value = playerStoreValue game state
 \end{code}
 
 The function `moveImpl`
 ----
 
-
 \begin{code}
-moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player,KState)
+moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
 moveImpl g p s xs = undefined
 \end{code}
 
