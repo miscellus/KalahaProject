@@ -27,13 +27,15 @@ type Player     = Bool
 
 (alice, bob) = (False, True)
 
-getPlayerOffset :: Kalaha -> Player -> Int
-getPlayerOffset (Kalaha pitCount _) player
-    | player == alice = 0
-    | otherwise = pitCount+1
+getPlayerOffset :: PitCount -> Player -> Int
+getPlayerOffset pitCount player =
+    case player of
+        alice   -> 0
+        bob     -> pitCount+1
 
-wrapIndex :: Kalaha -> Int -> Int
-wrapIndex (Kalaha pitCount _) index = index `mod` (2*pitCount + 2)
+getPlayerStore :: PitCount -> Player -> Int
+getPlayerStore pitCount player = (getPlayerOffset pitCount player) + pitCount
+
 \end{code}
 
 
@@ -64,17 +66,9 @@ movesImpl :: Kalaha -> Player -> KState -> [KPos]
 movesImpl game@(Kalaha pitCount _) player state =
     [index | (index, value) <- indexedPits, value > 0]
     where
-        indexedPits = dropThenTake playerOffset pitCount (zip [0..] state)
-        playerOffset = getPlayerOffset game player
-\end{code}
-
-The function `playerStoreValue`
-----
-
-\begin{code}
-playerStoreValue :: Kalaha -> KState -> Player -> Int
-playerStoreValue game@(Kalaha pitCount _) state player = state !! playerStoreIndex
-    where playerStoreIndex = (getPlayerOffset game player) + pitCount
+        indexedPits = dropThenTake playerOffset pitCount indexedState
+        indexedState = zip [0..] state
+        playerOffset = getPlayerOffset pitCount player
 \end{code}
 
 The function `valueImpl`
@@ -82,17 +76,64 @@ The function `valueImpl`
 
 \begin{code}
 valueImpl :: Kalaha -> KState -> Double
-valueImpl game state = fromIntegral ( (value bob) - (value alice) )
-    where value = playerStoreValue game state
+valueImpl (Kalaha pitCount _) state = fromIntegral ( (value bob) - (value alice) )
+    where value player = state !! (getPlayerStore pitCount player)
 \end{code}
 
 The function `moveImpl`
 ----
 
 \begin{code}
+modifyElement :: (a -> a) -> Int -> [a] -> ([a], a)
+modifyElement modifyOp 0 (x:xs) = ((modifyOp x) : xs, x)
+modifyElement modifyOp index (x:xs) = x : modifyElement modifyOp (index - 1) xs
+
+putStones :: KState -> KPos -> StoneCount -> KState
+putStones state position amount = fst (modifyElement (+amount) position state)
+
 moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
-moveImpl g p s xs = undefined
+moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
+    sowe player stateAfterGrab startPosition stones
+    where
+        (stateHead, stones : stateTail) = splitAt startPosition startState
+        stateAfterGrab = stateHead ++ (0 : stateTail)
+
+        sowe :: Player -> KState -> KPos -> StoneCount -> (Player, KState)
+        sowe player state position 1 =
+            if position == ownStore
+            then (player, stateFinalStone)
+            else
+                if stoneCountInLastPit > 0
+                then (not player, stateFinalStone)
+                else (not player, stateOpponentStonesPutInOwnStore)
+            where
+                ownStore = getPlayerStore pitCount player
+                stoneCountInLastPit = state !! position
+                stateFinalStone = putStones state position 1
+                stateOpponentStonesPutInOwnStore =
+                    modifyElement (+(stonesOppositeSide+1)) ownStore state'
+                    where
+                        (state', stonesOppositeSide) = modifyElement (const 0) otherSidePit state
+                        otherSidePit = 2*(pitCount - position)
+        sowe player state position stonesLeft =
+            sowe player nextState nextPosition (stonesLeft-1)
+            where
+                nextPosition = getNextPosition position player
+                nextState = putStones state position 1
+
+        getNextPosition :: KPos -> Player -> KPos
+        getNextPosition position player
+            | nextPosition == opponentStore = getNextPosition nextPosition player
+            | otherwise                     = nextPosition
+            where
+                nextPosition = wrapIndex (position + 1)
+                opponentStore = getPlayerStore pitCount (not player)
+
+        wrapIndex :: Int -> Int
+        wrapIndex index = index `mod` (2*pitCount + 2)
+
 \end{code}
+
 
 The function `showGameImpl`
 ----
