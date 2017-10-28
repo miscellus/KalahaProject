@@ -16,6 +16,8 @@ The Kalaha game with parameters $(n,m)$
 
 \begin{code}
 module Kalaha where
+import Data.List
+import Debug.Trace
 
 type PitCount   = Int
 type StoneCount = Int
@@ -28,10 +30,7 @@ type Player     = Bool
 (alice, bob) = (False, True)
 
 getPlayerOffset :: PitCount -> Player -> Int
-getPlayerOffset pitCount player =
-    case player of
-        alice   -> 0
-        bob     -> pitCount+1
+getPlayerOffset pitCount player = if player == alice then 0 else pitCount + 1
 
 getPlayerStore :: PitCount -> Player -> Int
 getPlayerStore pitCount player = (getPlayerOffset pitCount player) + pitCount
@@ -55,7 +54,7 @@ The function `dropThenTake`
 
 \begin{code}
 dropThenTake :: Int -> Int -> [a] -> [a]
-dropThenTake n m xs = take n (drop m xs)
+dropThenTake n m xs = take m (drop n xs)
 \end{code}
 
 The function `movesImpl`
@@ -84,9 +83,28 @@ The function `moveImpl`
 ----
 
 \begin{code}
+
+-- Example:
+--   modifyElement (const 0) 2 (zip [0..] [0, 1, 2, 3])
+--   ((0,0) `f` ((1,1) `f` ((2,2) `f` ((3,3) `f` ([], _)))))
+--   ((0,0) `f` ((1,1) `f` ((2,2) `f` ([3], _))))
+--   ((0,0) `f` ((1,1) `f` ([0, 3], 2)))
+--   ((0,0) `f` ([1, 0, 3], 2))
+--   ([0, 1, 0, 3], 2)
 modifyElement :: (a -> a) -> Int -> [a] -> ([a], a)
-modifyElement modifyOp 0 (x:xs) = ((modifyOp x) : xs, x)
-modifyElement modifyOp index (x:xs) = x : modifyElement modifyOp (index - 1) xs
+-- modifyElement modifyOp index list = foldr f ([], undefined) (zip [0..] list)
+--     where
+--         f (i, x) (xs, y)
+--             | i == index = ((modifyOp x):xs, x)
+--             | otherwise    = (x:xs, y)
+modifyElement modifyOp index list
+    | null r    = (l, undefined)
+    | otherwise = (l ++ (modifyOp $ head r):(tail r), head r)
+    where
+        (l, r) = splitAt index list
+
+-- modifyElement modifyOp 0 (x:xs) = (modifyOp x) : xs
+-- modifyElement modifyOp index (x:xs) = x : modifyElement modifyOp (index - 1) xs
 
 putStones :: KState -> KPos -> StoneCount -> KState
 putStones state position amount = fst (modifyElement (+amount) position state)
@@ -110,27 +128,20 @@ moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
                 ownStore = getPlayerStore pitCount player
                 stoneCountInLastPit = state !! position
                 stateFinalStone = putStones state position 1
-                stateOpponentStonesPutInOwnStore =
-                    modifyElement (+(stonesOppositeSide+1)) ownStore state'
+                (stateOpponentStonesPutInOwnStore, _) =
+                    modifyElement (opponentStoneCount+1+) ownStore stateOpponentStonesTaken
                     where
-                        (state', stonesOppositeSide) = modifyElement (const 0) otherSidePit state
+                        (stateOpponentStonesTaken, opponentStoneCount) = modifyElement (const 0) otherSidePit state
                         otherSidePit = 2*(pitCount - position)
         sowe player state position stonesLeft =
             sowe player nextState nextPosition (stonesLeft-1)
             where
-                nextPosition = getNextPosition position player
                 nextState = putStones state position 1
-
-        getNextPosition :: KPos -> Player -> KPos
-        getNextPosition position player
-            | nextPosition == opponentStore = getNextPosition nextPosition player
-            | otherwise                     = nextPosition
-            where
-                nextPosition = wrapIndex (position + 1)
-                opponentStore = getPlayerStore pitCount (not player)
-
-        wrapIndex :: Int -> Int
-        wrapIndex index = index `mod` (2*pitCount + 2)
+                nextPosition = head $ dropWhile (== opponentStore) $ iterate toNextIndex position
+                    where
+                        toNextIndex = (`mod` (2*pitCount + 2)).(+1)
+                        opponentStore = getPlayerStore pitCount (not player)
+                        
 
 \end{code}
 
@@ -141,7 +152,24 @@ The function `showGameImpl`
 
 \begin{code}
 showGameImpl :: Kalaha -> KState -> String
-showGameImpl g@(Kalaha n m) xs = undefined
+showGameImpl game@(Kalaha pitCount _) state =
+    unlines [line1, line2, line3]
+    where
+        line1 = leftKalahaPadding ++ bobSideReady
+        line2 = bobKalaha ++ (replicate (length bobSideReady + 2) ' ') ++ aliceKalaha
+        line3 = leftKalahaPadding ++ aliceSideReady
+
+        leftKalahaPadding = replicate (length bobKalaha + 1) ' '
+        (bobSide, bobKalaha) = (reverse $ init bobHalf, last bobHalf)
+        (aliceSide, aliceKalaha) = (init aliceHalf, last aliceHalf)
+        (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) $ map show state
+        aliceSideReady = unwords paddedAliceSide
+        bobSideReady = unwords paddedBobSide
+        (paddedAliceSide, paddedBobSide) = unzip $ map (\(xs, ys, ml) -> (leftPadToLength ml '_' xs, leftPadToLength ml '_' ys)) blegh
+            where
+                leftPadToLength :: Int -> a -> [a] -> [a]
+                leftPadToLength toLength padding list = replicate (max (toLength - (length list)) 0) padding ++ list
+                blegh = [(xs, ys, max (length xs) (length ys)) | (xs, ys) <- (zip aliceSide bobSide)]
 \end{code}
 
 
