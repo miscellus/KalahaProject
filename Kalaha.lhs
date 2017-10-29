@@ -19,6 +19,8 @@ module Kalaha where
 import Data.List
 import Debug.Trace
 
+myTrace arg = traceShow arg arg
+
 type PitCount   = Int
 type StoneCount = Int
 data Kalaha     = Kalaha PitCount StoneCount deriving (Show, Read, Eq)
@@ -99,9 +101,10 @@ modifyElement :: (a -> a) -> Int -> [a] -> ([a], a)
 --             | otherwise    = (x:xs, y)
 modifyElement modifyOp index list
     | null r    = (l, undefined)
-    | otherwise = (l ++ (modifyOp $ head r):(tail r), head r)
+    | otherwise = (l ++ (modifyOp headR):(tail r), headR)
     where
         (l, r) = splitAt index list
+        headR = head r
 
 -- modifyElement modifyOp 0 (x:xs) = (modifyOp x) : xs
 -- modifyElement modifyOp index (x:xs) = x : modifyElement modifyOp (index - 1) xs
@@ -113,8 +116,7 @@ moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
 moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
     sowe player stateAfterGrab startPosition stones
     where
-        (stateHead, stones : stateTail) = splitAt startPosition startState
-        stateAfterGrab = stateHead ++ (0 : stateTail)
+        (stateAfterGrab, stones) = modifyElement (const 0) startPosition startState
 
         sowe :: Player -> KState -> KPos -> StoneCount -> (Player, KState)
         sowe player state position 1 =
@@ -137,7 +139,7 @@ moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
             sowe player nextState nextPosition (stonesLeft-1)
             where
                 nextState = putStones state position 1
-                nextPosition = head $ dropWhile (== opponentStore) $ iterate toNextIndex position
+                nextPosition = head $ filter (/= opponentStore) $ iterate toNextIndex position
                     where
                         toNextIndex = (`mod` (2*pitCount + 2)).(+1)
                         opponentStore = getPlayerStore pitCount (not player)
