@@ -152,24 +152,23 @@ The function `showGameImpl`
 
 \begin{code}
 showGameImpl :: Kalaha -> KState -> String
-showGameImpl game@(Kalaha pitCount _) state =
-    unlines [line1, line2, line3]
+showGameImpl (Kalaha pitCount stoneCount) state =
+    unlines $ map unwords [line1, line2, line3]
     where
-        line1 = leftKalahaPadding ++ bobSideReady
-        line2 = bobKalaha ++ (replicate (length bobSideReady + 2) ' ') ++ aliceKalaha
-        line3 = leftKalahaPadding ++ aliceSideReady
+        (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) $ map (padToMaxLength.show) state
+        line1 = emptySlot : (reverse $ init bobHalf)
+        line2 = bobKalaha : (replicate pitCount emptySlot) ++ [aliceKalaha]
+        line3 = emptySlot : (init aliceHalf)
+        aliceKalaha = last aliceHalf
+        bobKalaha = last bobHalf
 
-        leftKalahaPadding = replicate (length bobKalaha + 1) ' '
-        (bobSide, bobKalaha) = (reverse $ init bobHalf, last bobHalf)
-        (aliceSide, aliceKalaha) = (init aliceHalf, last aliceHalf)
-        (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) $ map show state
-        aliceSideReady = unwords paddedAliceSide
-        bobSideReady = unwords paddedBobSide
-        (paddedAliceSide, paddedBobSide) = unzip $ map (\(xs, ys, ml) -> (leftPadToLength ml '_' xs, leftPadToLength ml '_' ys)) blegh
+        maxLength = length $ show $ 2*pitCount*stoneCount
+        emptySlot = replicate maxLength ' '
+
+        padToMaxLength :: String -> String
+        padToMaxLength str = replicate padLength ' ' ++ str
             where
-                leftPadToLength :: Int -> a -> [a] -> [a]
-                leftPadToLength toLength padding list = replicate (max (toLength - (length list)) 0) padding ++ list
-                blegh = [(xs, ys, max (length xs) (length ys)) | (xs, ys) <- (zip aliceSide bobSide)]
+                padLength = max 0 (maxLength - (length str))
 \end{code}
 
 
