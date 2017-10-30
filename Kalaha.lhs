@@ -31,12 +31,13 @@ type Player     = Bool
 
 (alice, bob) = (False, True)
 
-getPlayerOffset :: PitCount -> Player -> Int
-getPlayerOffset pitCount player = if player == alice then 0 else pitCount + 1
+getPlayerOffset :: PitCount -> Player -> KPos
+getPlayerOffset pitCount player = if player == alice
+    then 0
+    else pitCount + 1
 
-getPlayerStore :: PitCount -> Player -> Int
+getPlayerStore :: PitCount -> Player -> KPos
 getPlayerStore pitCount player = (getPlayerOffset pitCount player) + pitCount
-
 \end{code}
 
 
@@ -86,6 +87,9 @@ The function `moveImpl`
 
 \begin{code}
 
+condApply :: Bool -> (a -> a) -> a -> a
+condApply condition function value = if condition then function value else value
+
 modifyElement :: (a -> a) -> Int -> [a] -> ([a], a)
 modifyElement modifyOp index list =
     case uncons r of
@@ -99,27 +103,26 @@ putStones state position amount = fst (modifyElement (+amount) position state)
 
 moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
 moveImpl (Kalaha pitCount _) player startState startPosition =
-    sowe stateAfterGrab (getNextPosition startPosition) stones
+    (playerAfterSowing, condApply wasLastMove playersGetWhatTheyHaveLeft stateAfterSowing)
     where
-        (stateAfterGrab, stones) = modifyElement (const 0) startPosition startState
+        wasLastMove = or $ map (all (==0) . init) [aliceHalf, bobHalf]
+            where (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) stateAfterSowing
+        (playerAfterSowing, stateAfterSowing) = sowe stateAfterGrab (getNextPosition startPosition) initialStones
+        (stateAfterGrab, initialStones) = modifyElement (const 0) startPosition startState
 
         sowe :: KState -> KPos -> StoneCount -> (Player, KState)
-        sowe state position 1 =
-            if position == ownStore
-            then (player, stateFinalStone)
-            else
-                if stoneCountInLastPit > 0
-                then (not player, stateFinalStone)
-                else (not player, stateOpponentStonesPutInOwnStore)
+        sowe state position 1
+            | position == ownStore                = (player, statePutDownLastStone)
+            | state !! position == 0 && onOwnSide = (not player, stateWinStonesOpposite)
+            | otherwise                           = (not player, statePutDownLastStone)
             where
+                statePutDownLastStone = putStones state position 1
+                onOwnSide = position < ownStore && position >= (ownStore - pitCount)
                 ownStore = getPlayerStore pitCount player
-                stoneCountInLastPit = state !! position
-                stateFinalStone = putStones state position 1
-                stateOpponentStonesPutInOwnStore =
-                    putStones stateOpponentStonesTaken ownStore (stonesTakenFromOpponent+1)
+                stateWinStonesOpposite = putStones state' ownStore (opponentStones+1)
                     where
-                        (stateOpponentStonesTaken, stonesTakenFromOpponent) = modifyElement (const 0) otherSidePit state
-                        otherSidePit = 2*pitCount - position
+                        (state', opponentStones) = modifyElement (const 0) otherSidePit state
+                        otherSidePit = 2*pitCount - position -- 'position' must (and should) be a pit
 
         sowe state position stonesLeft =
             sowe nextState nextPosition (stonesLeft-1)
@@ -130,12 +133,19 @@ moveImpl (Kalaha pitCount _) player startState startPosition =
         getNextPosition :: KPos -> KPos
         getNextPosition position = head $ dropWhile (== opponentStore) $ tail $ iterate toNextIndex position
             where
-                toNextIndex = (`mod` (2*pitCount + 2)).(+1)
+                toNextIndex = (`mod` (2*halfSize)).(+1)
                 opponentStore = getPlayerStore pitCount (not player)
-                        
+
+        playersGetWhatTheyHaveLeft :: KState -> KState 
+        playersGetWhatTheyHaveLeft state = foldl' f zeroed $ zip [0..] state
+            where
+                f accState (index, stones) = fst $ modifyElement (+stones) nextStore accState
+                    where nextStore = (index `div` halfSize)*halfSize + pitCount
+                zeroed = map (const 0) state
+
+        halfSize = pitCount+1
 
 \end{code}
-
 
 The function `showGameImpl`
 ----
