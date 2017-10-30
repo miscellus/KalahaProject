@@ -86,40 +86,25 @@ The function `moveImpl`
 
 \begin{code}
 
--- Example:
---   modifyElement (const 0) 2 (zip [0..] [0, 1, 2, 3])
---   ((0,0) `f` ((1,1) `f` ((2,2) `f` ((3,3) `f` ([], _)))))
---   ((0,0) `f` ((1,1) `f` ((2,2) `f` ([3], _))))
---   ((0,0) `f` ((1,1) `f` ([0, 3], 2)))
---   ((0,0) `f` ([1, 0, 3], 2))
---   ([0, 1, 0, 3], 2)
 modifyElement :: (a -> a) -> Int -> [a] -> ([a], a)
--- modifyElement modifyOp index list = foldr f ([], undefined) (zip [0..] list)
---     where
---         f (i, x) (xs, y)
---             | i == index = ((modifyOp x):xs, x)
---             | otherwise    = (x:xs, y)
-modifyElement modifyOp index list
-    | null r    = (l, undefined)
-    | otherwise = (l ++ (modifyOp headR):(tail r), headR)
+modifyElement modifyOp index list =
+    case uncons r of
+        Nothing      -> error "Index out of range"
+        Just (x, xs) -> (l ++ (modifyOp x : xs), x)
     where
         (l, r) = splitAt index list
-        headR = head r
-
--- modifyElement modifyOp 0 (x:xs) = (modifyOp x) : xs
--- modifyElement modifyOp index (x:xs) = x : modifyElement modifyOp (index - 1) xs
 
 putStones :: KState -> KPos -> StoneCount -> KState
 putStones state position amount = fst (modifyElement (+amount) position state)
 
 moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
-moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
-    sowe player stateAfterGrab startPosition stones
+moveImpl (Kalaha pitCount _) player startState startPosition =
+    sowe stateAfterGrab (getNextPosition startPosition) stones
     where
         (stateAfterGrab, stones) = modifyElement (const 0) startPosition startState
 
-        sowe :: Player -> KState -> KPos -> StoneCount -> (Player, KState)
-        sowe player state position 1 =
+        sowe :: KState -> KPos -> StoneCount -> (Player, KState)
+        sowe state position 1 =
             if position == ownStore
             then (player, stateFinalStone)
             else
@@ -130,19 +115,23 @@ moveImpl game@(Kalaha pitCount stoneCount) player startState startPosition =
                 ownStore = getPlayerStore pitCount player
                 stoneCountInLastPit = state !! position
                 stateFinalStone = putStones state position 1
-                (stateOpponentStonesPutInOwnStore, _) =
-                    modifyElement (opponentStoneCount+1+) ownStore stateOpponentStonesTaken
+                stateOpponentStonesPutInOwnStore =
+                    putStones stateOpponentStonesTaken ownStore (stonesTakenFromOpponent+1)
                     where
-                        (stateOpponentStonesTaken, opponentStoneCount) = modifyElement (const 0) otherSidePit state
-                        otherSidePit = 2*(pitCount - position)
-        sowe player state position stonesLeft =
-            sowe player nextState nextPosition (stonesLeft-1)
+                        (stateOpponentStonesTaken, stonesTakenFromOpponent) = modifyElement (const 0) otherSidePit state
+                        otherSidePit = 2*pitCount - position
+
+        sowe state position stonesLeft =
+            sowe nextState nextPosition (stonesLeft-1)
             where
                 nextState = putStones state position 1
-                nextPosition = head $ filter (/= opponentStore) $ iterate toNextIndex position
-                    where
-                        toNextIndex = (`mod` (2*pitCount + 2)).(+1)
-                        opponentStore = getPlayerStore pitCount (not player)
+                nextPosition = getNextPosition position
+
+        getNextPosition :: KPos -> KPos
+        getNextPosition position = head $ dropWhile (== opponentStore) $ tail $ iterate toNextIndex position
+            where
+                toNextIndex = (`mod` (2*pitCount + 2)).(+1)
+                opponentStore = getPlayerStore pitCount (not player)
                         
 
 \end{code}
