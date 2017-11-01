@@ -101,6 +101,11 @@ modifyElement modifyOp index list =
 putStones :: KState -> KPos -> StoneCount -> KState
 putStones state position amount = fst (modifyElement (+amount) position state)
 
+leftPadWithSpaces :: Int -> String -> String
+leftPadWithSpaces toLength str = replicate padLength ' ' ++ str
+    where
+        padLength = max 0 (toLength - (length str))
+
 moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
 moveImpl (Kalaha pitCount _) player startState startPosition =
     (playerAfterSowing, condApply wasLastMove playersGetWhatTheyHaveLeft stateAfterSowing)
@@ -156,7 +161,7 @@ showGameImpl :: Kalaha -> KState -> String
 showGameImpl (Kalaha pitCount stoneCount) state =
     unlines $ map unwords [line1, line2, line3]
     where
-        (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) $ map (padToMaxLength.show) state
+        (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) $ map ((leftPadWithSpaces maxLength).show) state
         line1 = emptySlot : (reverse $ init bobHalf)
         line2 = bobKalaha : (replicate pitCount emptySlot) ++ [aliceKalaha]
         line3 = emptySlot : (init aliceHalf)
@@ -165,11 +170,6 @@ showGameImpl (Kalaha pitCount stoneCount) state =
 
         maxLength = length $ show $ 2*pitCount*stoneCount
         emptySlot = replicate maxLength ' '
-
-        padToMaxLength :: String -> String
-        padToMaxLength str = replicate padLength ' ' ++ str
-            where
-                padLength = max 0 (maxLength - (length str))
 \end{code}
 
 
@@ -178,6 +178,15 @@ Trees
 
 \begin{code}
 data Tree m v  = Node v [(m,Tree m v)] deriving (Eq, Show)
+
+testTree = Node 3 [
+    (0, Node 4 [
+        (0, Node 5 []), (1, Node 6 []), (2, Node 7 [])
+    ])
+    ,(1, Node 9 [
+        (0, Node 10 [])
+    ])]
+
 \end{code}
 
 The function `takeTree`
@@ -185,7 +194,10 @@ The function `takeTree`
 
 \begin{code}
 takeTree :: Int -> Tree m v -> Tree m v
-takeTree = undefined
+takeTree 0 (Node value _) = Node value []
+takeTree _ node@(Node _ []) = node
+takeTree depth (Node value subTrees) = Node value $ map f subTrees
+    where f (m, subTree) = (m, takeTree (depth - 1) subTree)
 \end{code}
 
 The Minimax algorithm
