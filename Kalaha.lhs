@@ -11,14 +11,11 @@ abstract: |
 
 \newpage
 
-Preface & Discaimer
+Preface
 ====
 In general I have strived towards having the code be as easily humanly parseable and self-documenting as possible;
 namely, by favoring longer, more descriptive symbol names over those of the one- or two-letter variety perhaps more canonical to Haskell.
 Exceptions are common abbreviations or instances where a value needs to be bound to an intermediate symbol before being used in another expression.
-
-This has the downside of some lines being too long and wrapping;
-this problem is, however, mainly a problem in the report due to margins and font sizes rather than in the source directly.
 
 The Kalaha game with parameters $(n,m)$
 ====
@@ -74,7 +71,7 @@ The function `movesImpl`
 ----
 Given a player and kalaha board state, returns a list of valid indexes on the board for that player to start a move from.
 Since it is the indexes we are interested in, we associate each position on the board with an index by zipping the board state with `[0..]`.
-Then the pits belonging to the given player are extracted from the association list by first dropping the offset to that players side, second, taking the amount of elements that there is pits on one side.
+Then the pits belonging to the given player are extracted from the association list by first dropping the offset to that player's side, second, taking the amount of elements that there is pits on one side.
 Finally, a list comprehension is used to filter by non-empty pits.
 
 
@@ -104,7 +101,7 @@ The function `moveImpl`
 ----
 Takes all the necessary inputs for making a move in a game of Kalaha, the board setup, the player making the move, the game state before the move, and the index of the position at which the player would like to grab the initial stones from.
 
-Returns the player who gets to make the following move in addition to the state of the board after the move.
+Returns the player's who gets to make the following move in addition to the state of the board after the move.
 
 This function has several individual concerns and have thus been composed by smaller internal functions that each perform part of the move.
 
@@ -116,11 +113,11 @@ It is worthy of note that unlike a real game of Kalaha, this implementation does
 
 For instance, in an arbitrary Kalaha game, the amount of stones grabbed initially could be enough to make several full round trips on the board.
 
-Instead of sowing through all the stones in linear time with respect to this potentially high amount of stones, this implementation calculates both the quotient and the remainder of dividing the amount of drop spots on the board (all spots but the opponent's store); and because the quotient signifies the amount of full round trips that have to be made, time and memory can be saved by simply adding the quotient to each of the drop spots in linear time with respect to the board size instead of the stone count.
+Instead of sewing through all the stones in linear time with respect to this potentially high amount of stones, this implementation calculates both the quotient and the remainder of dividing the amount of drop spots on the board (all spots but the opponent's store); and because the quotient signifies the amount of full round trips that have to be made, time and memory can be saved by simply adding the quotient to each of the drop spots in linear time with respect to the board size instead of the stone count.
 
-Now only the remaining stones need to be sown, which appropriatly is the remainder. These are all trivially distributed to where they need to go, all except the last stone which is special-cased by the helping function, `dropLastStone` which handles all rules for the last stone.
+Now only the remaining stones need to be sown, which appropriately the remainder holds the amount of. These are all trivially distributed to where they need to go, all except the last stone which is special-cased by the helping function, `dropLastStone` which handles all rules for the last stone.
 
-Finally, if the move resultet in the game ending, another helping function, `cleanupIfGameOver` is applied to the returned state, putting all stones in the store of the player to whom they belong.
+Finally, if the move resulted in the game ending, another helping function, `cleanupIfGameOver` is applied to the returned state, putting all stones in the store of the player to whom they belong.
 \newpage
 
 
@@ -248,7 +245,7 @@ The function `takeTree`
 ----
 Cuts off a tree at a given depth.
 
-The helping function applyToSnd enables a neat map over the branches in the tree, by recusivly applying `takeTree` to the second element of the tuples that represent the branches, leaving the `m`'s in the tree alone.
+The helping function applyToSnd enables a neat map over the branches in the tree, by recursively applying `takeTree` to the second element of the tuples that represent the branches, leaving the `m`'s in the tree alone.
 
 
 \begin{code}
@@ -286,7 +283,7 @@ The function `tree`
 ----
 Lazily generates the full game tree of a game of Kalaha.
 
-The function gets the moves possible for a given player from `movesImpl` and then maps `nodeForMove` over all of those possible moves getting the resulting next players and next game states to recursively continue generating from, down the tree.
+The function gets the moves possible for a given player from `movesImpl` and then maps `nodeForMove` over all of those possible moves getting the resulting next player's and next game states to recursively continue generating from, down the tree.
 
 
 \begin{code}
@@ -302,13 +299,13 @@ tree game (player, state) = Node (player, theValue) (map nodeForMove theMoves)
 
 The function `minimax`
 ----
-Algorithm that tries to minimize the other players ability to force bad moves on you.
+Algorithm that tries to minimize the other player's ability to force bad moves on you.
 
-Essentially it works by playing all possible games ahead of the current game state, before returning the initial move that, given optimal, adversarial play by both players, result in the best garanteed score for the player it was trying to optimize for.
+Essentially it works by playing all possible games ahead of the current game state, before returning the initial move that, given optimal, adversarial play by both player's, result in the best guaranteed score for the player it was trying to optimize for.
 
 This implementation tries to be minimally redundant, making use of the custom helper function `bestBy` which is comparable to the standard library functions `minimumBy` and `maximumBy` apart from the criterium for what is best when comparing two elements being a parameter to the function, making it more general.
 
-Also, `applyToPair` is used to apply two different functions to the first and second element the tuples representing the initial move and the best garanteed value found in one of the leaves of the game tree.
+Also, `applyToPair` is used to apply two different functions to the first and second element the tuples representing the initial move and the best guaranteed value found in one of the leaves of the game tree.
 
 
 \begin{code}
@@ -326,15 +323,15 @@ The function `minimaxAlphaBeta`
 ----
 Minimax again this time with alpha-beta pruning.
 
-It relies on the invariant that alpha and beta always represent the best already explored values for the maximizing and minimizing players respectivly along the path to the root.
+It relies on the invariant that alpha and beta always represent the best already explored values for the maximizing and minimizing player's respectively along the path to the root.
 
 When minimax gets to a new subtree it always needs to check the first branch, regardless of alpha-beta pruning; this gives a lower bound on that entire subtree saying that, it can be no worse than that.
 
-The pruning step can happen right before the next branch in the same subtree is checked, now the algorithm can look at the best value for the previous player, higher up in the tree, by looking at either alpha or beta, depending on whether it was the maximizing or the minimizing player before, and compare that value to the newly found lower bound in this subtree; if this subtree already garantees an outcome better for you, but worse for the previous player, the previous player will never let the game go down into this subtree, thus, no further branches need checking, they can be pruned.
+The pruning step can happen right before the next branch in the same subtree is checked, now the algorithm can look at the best value for the previous player, higher up in the tree, by looking at either alpha or beta, depending on whether it was the maximizing or the minimizing player before, and compare that value to the newly found lower bound in this subtree; if this subtree already guarantees an outcome better for you, but worse for the previous player, the previous player will never let the game go down into this subtree, thus, no further branches need checking, they can be pruned.
 
 This implementation varies quite a bit from the straight-forward `minimax` implementation. Since, by definition, not all subtrees are visited, a simple `map` over the branches with recursive calls for each item, is not an option.
 Instead, this implementation has two base cases. The first is for when the algorithm hits a leaf node, which is the only time it gets passed a node with an empty list of branches; in this case it simply returns the value in the leaf node.
-The second base case is when only a single branch is in the node. It gets to this case even without it occuring naturally in the game tree because the the algorithm calls itself recursively both vertically, like in minimax, but also horizontally, for each branch in the current subtree, passing on only the tail of the list of branches, baring the one just checked.
+The second base case is when only a single branch is in the node. It gets to this case even without it occurring naturally in the game tree because the the algorithm calls itself recursively both vertically, like in minimax, but also horizontally, for each branch in the current subtree, passing on only the tail of the list of branches, excluding the one just checked.
 
 \newpage
 \begin{code}
