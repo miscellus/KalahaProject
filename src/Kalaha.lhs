@@ -3,10 +3,10 @@ toc: 1
 numbersections: true
 geometry: margin=2.5cm
 title: Programming Languages (Project 1)
-author: Full Name (sdulogin16)
-date: November 13, 2017
+author: Jakob Kjær-Kammersgaard (jakkj16)
+date: November 17, 2017
 abstract: |
-    The goal of this project is ...
+    The overarching purpose of this project has been to implement the rules of the game, Kalaha, abstracted to having a dynamic amount of pits and stones in each pit. Additionally, it has been about implementing a rudimentary AI in the form of minimax with and without alpha-beta pruning. The tasks have been fulfilled to the tertiary goal of having not only a working implementation, but one that takes advantage of functional programming principles on top of being generally high quality code.
 ---
 
 \newpage
