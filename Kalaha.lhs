@@ -17,7 +17,6 @@ The Kalaha game with parameters $(n,m)$
 \begin{code}
 module Kalaha where
 import Data.List
-import Data.Ord
 import Debug.Trace
 
 mtrace :: Show a => String -> a -> a
@@ -58,7 +57,7 @@ The function `dropThenTake`
 
 \begin{code}
 dropThenTake :: Int -> Int -> [a] -> [a]
-dropThenTake toDrop toTake list = take toTake (drop toDrop list)
+dropThenTake d t = take t . drop d
 \end{code}
 
 The function `movesImpl`
@@ -89,61 +88,122 @@ The function `moveImpl`
 \begin{code}
 
 moveImpl :: Kalaha -> Player -> KState -> KPos -> (Player, KState)
-moveImpl (Kalaha pitCount _) player startState startPosition =
-  (nextPlayer, stateAfterSowingAndLastMoveHandling)
+moveImpl (Kalaha pitCount stoneCount) player startState startPosition =
+  applyToSnd gameEndingMoveCleanup  $  dropLastStone  $  sowes !! stonesToSowe
   where
     -- Grab the stones initially
-    (grabbedStones, stateAfterGrab) = getAndModifyElem (const 0) startPosition startState
+    (grabbedStones, stateAfterGrab) = grabStones startPosition startState
 
     -- Skip full roundtrips
     -- Remember to save the last stone
-    (numRoundtrips, stonesToSowe) = (grabbedStones-1) `quotRem` numSpotsToDropIn
+    (numRoundtrips, stonesToSowe) = (grabbedStones-1) `quotRem` (boardSize-1)
     stateAfterRoundtrips = modifyElem (+(-numRoundtrips)) opponentStore $ map (+numRoundtrips) stateAfterGrab
 
     -- Rest of the sowing
-    -- (nextPlayer, stateAfterLastStone) = putDownLastStone $ sowe stateAfterRoundtrips startPosition stonesToSowe
-    (nextPlayer, stateAfterLastStone) = putDownLastStone $ iterate soweStep (stateAfterRoundtrips, firstDropSpot) !! stonesToSowe
-      where soweStep (s, p) = (dropStone p s, getNextPosition p)
-            firstDropSpot = getNextPosition startPosition
-
-    -- If it was the last move (a whole side of pits got empty),
-    -- move the remaining stones to the store on the same side
-    stateAfterSowingAndLastMoveHandling = applyCond playersGetWhatTheyHaveLeft wasLastMove stateAfterLastStone
-      where wasLastMove = or $ map (all (==0) . init) [aliceHalf, bobHalf]
-            (aliceHalf, bobHalf) = splitAt (getPlayerOffset pitCount bob) stateAfterLastStone
-  
-    -- Indicies of the stores
-    ownStore = getPlayerStore pitCount player
-    opponentStore = getPlayerStore pitCount (not player)
-
+    
+    
+    sowes = iterate sowe (stateAfterRoundtrips, getNextPosition startPosition)
+      where sowe (s, p) = (dropStone p s, getNextPosition p)
+    
     -- Common expressions and for conveyance of intent
-    numSpots = 2*pitCount+2
-    numSpotsToDropIn = numSpots-1
-    dropStone = modifyElem (+1)
+    boardSize     = 2*pitCount+2
+    ownStore      = getPlayerStore pitCount player
+    opponentStore = getPlayerStore pitCount (not player)
+    dropStone     = modifyElem (+1)
+    grabStones    = getAndModifyElem (const 0)
 
-    putDownLastStone :: (KState, KPos) -> (Player, KState)
-    putDownLastStone (state, position)
-        | position == ownStore                = (player, statePutDownLastStone)
+    gameEndingMoveCleanup :: KState -> KState
+    gameEndingMoveCleanup state
+      | not wasLastMove = state
+      |     wasLastMove = (replicate pitCount 0) ++ aliceFinalScore : (replicate pitCount 0) ++ [bobFinalScore]
+      where
+        -- It was the last move if a whole side of pits got empty,
+        wasLastMove = (False, False) /= (applyToBothInPair (all(==0) . init) $ splitAt (pitCount+1) state)
+        aliceFinalScore = sum $ take (pitCount+1) state
+        bobFinalScore = (2*pitCount*stoneCount - aliceFinalScore) -- Since we have a constant number of stones total
+
+    dropLastStone :: (KState, KPos) -> (Player, KState)
+    dropLastStone (state, position)
+        | position == ownStore                = (player, dropStone position state)
         | state !! position == 0 && onOwnSide = (not player, stateWinStonesOpposite)
-        | otherwise                           = (not player, statePutDownLastStone)
+        | otherwise                           = (not player, dropStone position state)
         where
           statePutDownLastStone = dropStone position state
           onOwnSide = position < ownStore && position >= (ownStore - pitCount)
           stateWinStonesOpposite = modifyElem (+(stonesOpposite+1)) ownStore stateOppositeStonesTaken
             where
-              (stonesOpposite, stateOppositeStonesTaken) = getAndModifyElem (const 0) otherSidePit state
-              otherSidePit = numSpots - 2 - position -- NOTE: 'position' must (and should) be a pit
+              (stonesOpposite, stateOppositeStonesTaken) = grabStones otherSidePit state
+              otherSidePit = boardSize - 2 - position -- NOTE: 'position' must (and should) be a pit
 
     getNextPosition :: KPos -> KPos
-    getNextPosition position = (position + offset) `mod` numSpots
-        where offset = if position == opponentStore then 2 else 1
+    getNextPosition p = toNext $ applyCond toNext (toNext p == opponentStore) p
+      where toNext = (`mod` boardSize).(+1)
 
-    playersGetWhatTheyHaveLeft :: KState -> KState 
-    playersGetWhatTheyHaveLeft state = foldl' f zeroed $ zip [0..] state
-      where
-        f accState (index, stones) = modifyElem (+stones) nextStore accState
-          where nextStore = index - (index `mod` (pitCount+1)) + pitCount
-        zeroed = map (const 0) state
+specificMoves = let g = Kalaha 6 6 in [
+    moveImpl g False [6,6,6,6,6,6,0,6,6,6,6,6,6,0] 0 == (False,[0,7,7,7,7,7,1,6,6,6,6,6,6,0]),
+    moveImpl g False [0,7,7,7,7,7,1,6,6,6,6,6,6,0] 3 == (True,[0,7,7,0,8,8,2,7,7,7,7,6,6,0]),
+    moveImpl g True [0,7,7,0,8,8,2,7,7,7,7,6,6,0] 9 == (False,[1,8,8,0,8,8,2,7,7,0,8,7,7,1]),
+    moveImpl g False [1,8,8,0,8,8,2,7,7,0,8,7,7,1] 1 == (True,[1,0,9,1,9,9,3,8,8,1,8,7,7,1]),
+    moveImpl g True [1,0,9,1,9,9,3,8,8,1,8,7,7,1] 10 == (False,[2,1,10,2,10,9,3,8,8,1,0,8,8,2]),
+    moveImpl g False [2,1,10,2,10,9,3,8,8,1,0,8,8,2] 4 == (True,[3,2,10,2,0,10,4,9,9,2,1,9,9,2]),
+    moveImpl g True [3,2,10,2,0,10,4,9,9,2,1,9,9,2] 9 == (False,[3,2,10,2,0,10,4,9,9,0,2,10,9,2]),
+    moveImpl g False [3,2,10,2,0,10,4,9,9,0,2,10,9,2] 3 == (True,[3,2,10,0,1,11,4,9,9,0,2,10,9,2]),
+    moveImpl g True [3,2,10,0,1,11,4,9,9,0,2,10,9,2] 7 == (False,[4,3,11,0,1,11,4,0,10,1,3,11,10,3]),
+    moveImpl g False [4,3,11,0,1,11,4,0,10,1,3,11,10,3] 5 == (True,[5,4,12,0,1,0,8,1,11,0,4,12,11,3]),
+    moveImpl g True [5,4,12,0,1,0,8,1,11,0,4,12,11,3] 7 == (False,[5,4,12,0,1,0,8,0,12,0,4,12,11,3]),
+    moveImpl g False [5,4,12,0,1,0,8,0,12,0,4,12,11,3] 1 == (True,[5,0,13,1,2,0,9,0,12,0,4,12,11,3]),
+    moveImpl g True [5,0,13,1,2,0,9,0,12,0,4,12,11,3] 8 == (False,[6,1,14,2,3,0,9,0,0,1,5,13,12,6]),
+    moveImpl g False [6,1,14,2,3,1,9,1,0,1,5,13,12,4] 5 == (False,[6,1,14,2,3,0,10,1,0,1,5,13,12,4]),
+    moveImpl g False [6,1,14,2,3,0,10,1,0,1,5,13,12,4] 0 == (False,[0,2,15,3,4,1,11,1,0,1,5,13,12,4]),
+    moveImpl g False [0,2,15,3,4,1,11,1,0,1,5,13,12,4] 5 == (False,[0,2,15,3,4,0,12,1,0,1,5,13,12,4]),
+    moveImpl g False [0,2,15,3,4,0,12,1,0,1,5,13,12,4] 3 == (False,[0,2,15,0,5,1,13,1,0,1,5,13,12,4]),
+    moveImpl g False [0,2,15,0,5,1,13,1,0,1,5,13,12,4] 5 == (False,[0,2,15,0,5,0,14,1,0,1,5,13,12,4]),
+    moveImpl g False [0,2,15,0,5,0,14,1,0,1,5,13,12,4] 2 == (True,[1,3,1,2,7,1,15,2,1,2,6,14,13,4]),
+    moveImpl g True [1,3,1,2,7,1,15,2,1,2,6,14,13,4] 12 == (False,[0,4,2,3,8,2,15,3,2,3,7,15,0,8]),
+    moveImpl g False [0,4,2,3,8,2,15,3,2,3,7,15,0,8] 3 == (False,[0,4,2,0,9,3,16,3,2,3,7,15,0,8]),
+    moveImpl g False [0,4,2,0,9,3,16,3,2,3,7,15,0,8] 4 == (True,[0,4,2,0,0,4,19,4,3,4,8,16,0,8]),
+    moveImpl g True [0,4,2,0,0,4,19,4,3,4,8,16,0,8] 9 == (True,[0,4,2,0,0,4,19,4,3,0,9,17,1,9]),
+    moveImpl g True [0,4,2,0,0,4,19,4,3,0,9,17,1,9] 12 == (True,[0,4,2,0,0,4,19,4,3,0,9,17,0,10]),
+    moveImpl g True [0,4,2,0,0,4,19,4,3,0,9,17,0,10] 11 == (False,[2,6,3,1,1,5,19,5,4,1,10,1,2,12]),
+    moveImpl g False [2,6,3,1,1,5,19,5,4,1,10,1,2,12] 0 == (True,[0,7,4,1,1,5,19,5,4,1,10,1,2,12]),
+    moveImpl g True [0,7,4,1,1,5,19,5,4,1,10,1,2,12] 8 == (False,[0,7,4,1,1,5,19,5,0,2,11,2,3,12]),
+    moveImpl g False [0,7,4,1,1,5,19,5,0,2,11,2,3,12] 2 == (False,[0,7,0,2,2,6,20,5,0,2,11,2,3,12]),
+    moveImpl g False [0,7,0,2,2,6,20,5,0,2,11,2,3,12] 1 == (True,[0,0,1,3,3,7,21,6,1,2,11,2,3,12]),
+    moveImpl g True [0,0,1,3,3,7,21,6,1,2,11,2,3,12] 11 == (True,[0,0,1,3,3,7,21,6,1,2,11,0,4,13]),
+    moveImpl g True [0,0,1,3,3,7,21,6,1,2,11,0,4,13] 7 == (True,[0,0,1,3,3,7,21,0,2,3,12,1,5,14]),
+    moveImpl g True [0,0,1,3,3,7,21,0,2,3,12,1,5,14] 10 == (False,[1,1,2,4,4,8,21,1,3,4,0,2,6,15]),
+    moveImpl g False [1,1,2,4,4,8,21,1,3,4,0,2,6,15] 5 == (True,[2,1,2,4,4,0,22,2,4,5,1,3,7,15]),
+    moveImpl g True [2,1,2,4,4,0,22,2,4,5,1,3,7,15] 8 == (False,[2,1,2,4,4,0,22,2,0,6,2,4,8,15]),
+    moveImpl g False [2,1,2,4,4,0,22,2,0,6,2,4,8,15] 3 == (True,[2,1,2,0,5,1,23,3,0,6,2,4,8,15]),
+    moveImpl g True [2,1,2,0,5,1,23,3,0,6,2,4,8,15] 9 == (False,[3,2,2,0,5,1,23,3,0,0,3,5,9,16]),
+    moveImpl g False [3,2,2,0,5,1,23,3,0,0,3,5,9,16] 5 == (False,[3,2,2,0,5,0,24,3,0,0,3,5,9,16]),
+    moveImpl g False [3,2,2,0,5,0,24,3,0,0,3,5,9,16] 4 == (True,[3,2,2,0,0,1,25,4,1,1,3,5,9,16]),
+    moveImpl g True [3,2,2,0,0,1,25,4,1,1,3,5,9,16] 10 == (True,[3,2,2,0,0,1,25,4,1,1,0,6,10,17]),
+    moveImpl g True [3,2,2,0,0,1,25,4,1,1,0,6,10,17] 9 == (False,[3,2,0,0,0,1,25,4,1,0,0,6,10,20]),
+    moveImpl g False [3,2,0,0,0,1,25,4,1,0,0,6,10,20] 5 == (False,[3,2,0,0,0,0,26,4,1,0,0,6,10,20]),
+    moveImpl g False [3,2,0,0,0,0,26,4,1,0,0,6,10,20] 1 == (True,[3,0,1,0,0,0,27,4,1,0,0,6,10,20]),
+    moveImpl g True [3,0,1,0,0,0,27,4,1,0,0,6,10,20] 8 == (False,[3,0,1,0,0,0,27,4,0,0,0,6,10,21]),
+    moveImpl g False [3,0,1,0,0,0,27,4,0,0,0,6,10,21] 2 == (True,[3,0,0,0,0,0,28,4,0,0,0,6,10,21]),
+    moveImpl g True [3,0,0,0,0,0,28,4,0,0,0,6,10,21] 7 == (False,[3,0,0,0,0,0,28,0,1,1,1,7,10,21]),
+    moveImpl g False [3,0,0,0,0,0,28,0,1,1,1,7,10,21] 0 == (True,[0,1,1,0,0,0,30,0,1,0,1,7,10,21]),
+    moveImpl g True [0,1,1,0,0,0,30,0,1,0,1,7,10,21] 11 == (False,[1,2,2,1,1,0,30,0,1,0,1,0,11,22]),
+    moveImpl g False [1,2,2,1,1,0,30,0,1,0,1,0,11,22] 3 == (True,[1,2,2,0,2,0,30,0,1,0,1,0,11,22]),
+    moveImpl g True [1,2,2,0,2,0,30,0,1,0,1,0,11,22] 8 == (False,[1,2,2,0,2,0,30,0,0,0,1,0,11,23]),
+    moveImpl g False [1,2,2,0,2,0,30,0,0,0,1,0,11,23] 1 == (True,[1,0,3,0,2,0,31,0,0,0,1,0,11,23]),
+    moveImpl g True [1,0,3,0,2,0,31,0,0,0,1,0,11,23] 10 == (False,[1,0,3,0,2,0,31,0,0,0,0,0,11,24]),
+    moveImpl g False [1,0,3,0,2,0,31,0,0,0,0,0,11,24] 4 == (False,[1,0,3,0,0,1,32,0,0,0,0,0,11,24]),
+    moveImpl g False [1,0,3,0,0,1,32,0,0,0,0,0,11,24] 5 == (False,[1,0,3,0,0,0,33,0,0,0,0,0,11,24]),
+    moveImpl g False [1,0,3,0,0,0,33,0,0,0,0,0,11,24] 2 == (True,[1,0,0,1,1,0,34,0,0,0,0,0,11,24]),
+    moveImpl g True [1,0,0,1,1,0,34,0,0,0,0,0,11,24] 12 == (False,[2,1,0,2,2,1,34,1,1,1,0,0,0,27]),
+    moveImpl g False [2,1,0,2,2,1,34,1,1,1,0,0,0,27] 5 == (False,[2,1,0,2,2,0,35,1,1,1,0,0,0,27]),
+    moveImpl g False [2,1,0,2,2,0,35,1,1,1,0,0,0,27] 4 == (False,[2,1,0,2,0,1,36,1,1,1,0,0,0,27]),
+    moveImpl g False [2,1,0,2,0,1,36,1,1,1,0,0,0,27] 5 == (False,[2,1,0,2,0,0,37,1,1,1,0,0,0,27]),
+    moveImpl g False [2,1,0,2,0,0,37,1,1,1,0,0,0,27] 3 == (True,[2,1,0,0,1,0,39,0,1,1,0,0,0,27]),
+    moveImpl g True [2,1,0,0,1,0,39,0,1,1,0,0,0,27] 8 == (False,[2,1,0,0,1,0,39,0,0,2,0,0,0,27]),
+    moveImpl g False [2,1,0,0,1,0,39,0,0,2,0,0,0,27] 1 == (True,[2,0,0,0,1,0,40,0,0,2,0,0,0,27]),
+    moveImpl g True [2,0,0,0,1,0,40,0,0,2,0,0,0,27] 9 == (False,[2,0,0,0,1,0,40,0,0,0,1,0,0,28]),
+    moveImpl g False [2,0,0,0,1,0,40,0,0,0,1,0,0,28] 0 == (True,[0,0,0,0,0,0,44,0,0,0,0,0,0,28])
+  ]
 
 \end{code}
 
@@ -203,7 +263,13 @@ applyCond function condition value = if condition then function value else value
 applyToPair :: ((a -> b), (c -> d)) -> (a, c) -> (b, d)
 applyToPair (f1, f2) (l, r) = (f1 l, f2 r)
 applyToBothInPair f = applyToPair (f, f)
+applyToFst f = applyToPair (f, id)
 applyToSnd f = applyToPair (id, f)
+
+getBestBy :: (b -> a) -> (a -> a -> Bool) -> [b] -> b
+getBestBy _ _ [] = error "Cannot get element from empty list"
+getBestBy t betterThan (x:xs) = foldl f x xs
+  where f best next = if t next `betterThan` t best then next else best
 
 \end{code}
 
@@ -244,10 +310,9 @@ The function `takeTree`
 
 \begin{code}
 takeTree :: Int -> Tree m v -> Tree m v
-takeTree 0 (Node value _) = Node value []
-takeTree _ node@(Node _ []) = node
-takeTree depth (Node value subTrees) = Node value $ map f subTrees
-  where f (m, subTree) = (m, takeTree (depth - 1) subTree)
+takeTree 0 (Node v _) = Node v []
+takeTree _ (Node v []) = Node v []
+takeTree d (Node v ts) = Node v $ map (applyToSnd $ takeTree (d - 1)) ts
 \end{code}
 
 The Minimax algorithm
@@ -294,10 +359,12 @@ The function `minimax`
     
 \begin{code}
 minimax :: Tree m (Player, Double) -> (Maybe m, Double)
-minimax (Node (_, theValue) []) = (Nothing, theValue) 
-minimax (Node (player, _) branches) = applyToPair (Just, snd) $ chooseBestBy (comparing (snd.snd)) subResults
-  where chooseBestBy = if player then maximumBy else minimumBy
-        subResults = map (applyToSnd minimax) branches
+minimax (Node (_, value) []) = (Nothing, value) 
+minimax (Node (maximizer, _) branches) = 
+    applyToPair (Just, snd)
+  $ getBestBy (snd.snd) preference
+  $ map (applyToSnd minimax) branches
+  where preference = if maximizer then (>) else (<)
 
 \end{code}
 
@@ -305,10 +372,25 @@ The function `minimaxAlphaBeta`
 ----
 
 \begin{code}
+
 type AlphaBeta = (Double,Double)
 
+-- Alpha: best already explored option along the path to the root for the maximizer
+-- Beta: best already explored option along the path to the root for the minimizer
 minimaxAlphaBeta :: AlphaBeta -> Tree m (Player, Double) -> (Maybe m, Double)
-minimaxAlphaBeta = undefined
+minimaxAlphaBeta (a, b) (Node (maximizer, value) branches) = 
+  case branches of
+    [] -> (Nothing, value)
+    [(m, onlyOneSubTree)] -> (Just m, snd $ minimaxAlphaBeta (a, b) onlyOneSubTree)
+    ((m1, firstSubTree):restOfBranches) ->
+      let
+        result1@(_, v1) = (Just m1, snd $ minimaxAlphaBeta (a, b) firstSubTree)
+        ((a', b'), preference)
+          | maximizer = ((max a v1, b), (>))
+          | otherwise = ((a, min b v1), (<))
+      in if b' <= a'
+          then result1
+          else getBestBy snd preference [result1, minimaxAlphaBeta (a', b') (Node (maximizer, value) restOfBranches)]
 \end{code}
 
 Testing and sample executions
